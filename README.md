@@ -62,7 +62,7 @@ Then you can simply loop through the objects with the `All()` method.
 
 ### Customize options
 
-You can tweak the iteration providing your own options; they will be updated during the loop.
+You can tweak the iteration providing your own options. They will be updated during the loop.
 
 For example if you want to request only 5 repositories per request:
 
@@ -94,9 +94,9 @@ for repo := range repos.All() {
 
 ## Advanced usage
 
-Some APIs do not match the "standard" string arguments, or the returned type is not an array. In these case you can still use this package, but you will need to provide a "custom func" to the `ghiter.NewFromFn` constructor.
+Some APIs do not match the "standard" string arguments, or the returned type is not an array. In these cases you can still use this package, but you will need to provide a "custom func" to the `ghiter.NewFromFn` constructor.
 
-For example the [`client.Teams.ListTeamReposByID`](https://pkg.go.dev/github.com/google/go-github/v63/github#TeamsService.ListTeamReposByID) uses the `orgID, teamID int64` arguments:
+For example the [`client.Teams.ListTeamReposByID`](https://pkg.go.dev/github.com/google/go-github/v63/github#TeamsService.ListTeamReposByID) needs the `orgID, teamID int64` arguments:
 
 ```go
 repos := ghiter.NewFromFn(func(ctx context.Context, opts *github.ListOptions) ([]*github.Repository, *github.Response, error) {
@@ -104,7 +104,8 @@ repos := ghiter.NewFromFn(func(ctx context.Context, opts *github.ListOptions) ([
 })
 ```
 
-In the case the returned object is not an array you will have to "unwrap" it. For example the [`client.Teams.ListIDPGroupsInOrganization`](https://pkg.go.dev/github.com/google/go-github/v63/github#TeamsService.ListIDPGroupsInOrganization) returns a [IDPGroupList](https://pkg.go.dev/github.com/google/go-github/v63/github#IDPGroupList), and not a slice. 
+In case the returned object is not an array you will have to "unwrap" it.  
+For example the [`client.Teams.ListIDPGroupsInOrganization`](https://pkg.go.dev/github.com/google/go-github/v63/github#TeamsService.ListIDPGroupsInOrganization) returns a [IDPGroupList](https://pkg.go.dev/github.com/google/go-github/v63/github#IDPGroupList), and not a slice. 
 
 ```go
 idpGroups := ghiter.NewFromFn(func(ctx context.Context, opts *github.ListCursorOptions) ([]*github.IDPGroup, *github.Response, error) {
