@@ -7,9 +7,9 @@ import (
 	"iter"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 
-	"github.com/TomNomNom/linkheader"
 	"github.com/google/go-github/v63/github"
 )
 
@@ -92,53 +92,12 @@ func (it *Iterator[T, O]) All() iter.Seq[T] {
 			parts, resp, err := it.do()
 			it.raw = resp
 
-			links := linkheader.Parse(resp.Header.Get("link"))
-
-			var nextLink string
-			for _, link := range links {
-				if link.Rel == "next" {
-					nextLink = link.URL
-					break
-				}
-			}
-
-			nextURL, err := url.Parse(nextLink)
 			if err != nil {
 				it.err = err
 				return
 			}
 
-			vals := nextURL.Query()
-			for k, v := range vals {
-				fmt.Println(k, v)
-			}
-
-			val := reflect.ValueOf(it.opt).Elem()
-
-			for i := 0; i < val.NumField(); i++ {
-				field := reflect.TypeOf(it.opt).Elem().Field(i)
-				fieldType := val.Field(i).Kind()
-				if fieldType == reflect.Struct {
-					fmt.Println(field.Name, "nested")
-
-					nested := val.Field(i)
-					for i := 0; i < nested.NumField(); i++ {
-						nestedfieldVal := reflect.ValueOf(nested.Field(i))
-						nestedfield := reflect.TypeOf(nested).Field(i)
-						urlTAG := nestedfield.Tag.Get("url")
-						fmt.Println("##", nestedfield.Name, nestedfieldVal, nestedfield.Anonymous, nestedfield.Tag, urlTAG)
-					}
-				}
-
-				jsonTag := field.Tag.Get("url")
-				fmt.Println(field.Name, field.Anonymous, field.Tag, jsonTag)
-			}
-
-			if err != nil {
-				it.err = err
-				return
-			}
-
+			// push the result until yield, or an error occurs
 			for _, p := range parts {
 				if !yield(p) || contextErr(it) {
 					return
@@ -150,21 +109,21 @@ func (it *Iterator[T, O]) All() iter.Seq[T] {
 				return
 			}
 
-			// iterate to the next page
-			val = reflect.ValueOf(it.opt).Elem()
-			field := val.FieldByName("ListOptions")
-			if field.IsValid() && field.CanSet() {
+			// get the next page from the link header
+			links := ParseLinkHeader(resp.Header.Get("link"))
+			if next, found := links.FindByRel("next"); found {
+				nextURL, err := url.Parse(next.URL)
+				if err != nil {
+					it.err = err
+					return
+				}
 
-				listOpts := field.Interface().(github.ListOptions)
-				listOpts.Page = resp.NextPage
-				field.Set(reflect.ValueOf(listOpts))
-			}
+				vals := make(map[string]string)
+				for k, v := range nextURL.Query() {
+					vals[k] = v[0]
+				}
 
-			// Users.ListAll
-			field = val.FieldByName("Since")
-			if field.IsValid() && field.CanSet() {
-				fmt.Println(resp.Header.Get("link"))
-				field.SetInt(int64(resp.NextPage))
+				updateOptions(it.opt, vals)
 			}
 		}
 	}
@@ -239,4 +198,50 @@ func (it *Iterator[T, O]) do() ([]T, *github.Response, error) {
 	}
 
 	return nil, nil, errors.New("no func provided")
+}
+
+// updateOptions will update the github options based on the provided map and the `url` tag.
+// If the field in the struct has a `url` tag it tries to set the value of the field from the one
+// found in the map, if any.
+func updateOptions(v any, m map[string]string) {
+	valueOf := reflect.ValueOf(v)
+	typeOf := reflect.TypeOf(v)
+
+	if valueOf.Kind() == reflect.Pointer {
+		valueOf = valueOf.Elem()
+		typeOf = typeOf.Elem()
+	}
+
+	for i := 0; i < valueOf.NumField(); i++ {
+		structField := typeOf.Field(i)
+		fieldValue := valueOf.Field(i)
+
+		// if field is of type struct then iterate over the pointer
+		if structField.Type.Kind() == reflect.Struct {
+			if fieldValue.CanAddr() {
+				updateOptions(fieldValue.Addr().Interface(), m)
+			}
+		}
+
+		// otherwise check if it has a 'url' tag
+		urlTag := structField.Tag.Get("url")
+		if urlTag != "" {
+			urlParam := strings.Split(urlTag, ",")[0]
+
+			if fieldValue.IsValid() && fieldValue.CanSet() {
+				if v, found := m[urlParam]; found {
+					switch fieldValue.Kind() {
+					case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+						if i, err := strconv.Atoi(v); err == nil {
+							fieldValue.SetInt(int64(i))
+						}
+					case reflect.Ptr:
+						fieldValue.Set(reflect.ValueOf(&v))
+					default:
+						fieldValue.Set(reflect.ValueOf(v))
+					}
+				}
+			}
+		}
+	}
 }

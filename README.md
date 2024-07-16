@@ -1,1 +1,121 @@
 # gh-iter
+
+> **Note:** this package leverages the new `iter` package, and it needs at least the `v1.23rc1` Go version.
+
+The `gh-iter` package provides an iterator that can be used with the [`google/go-github`](https://github.com/google/go-github) client. It supports automatic pagination with generic types.
+
+Example:
+
+```go
+// init your Github client
+client := github.NewClient(nil)
+
+// create an iterator and start looping! 🎉
+users := ghiter.NewFromFn(client.Users.ListAll)
+for u := range users.All() {
+    fmt.Println(*u.Login)
+}
+
+// and check if the loop stopped because of an error
+if users.Err() != nil {
+    // something happened :(
+}
+```
+
+## Usage
+
+Most of the Github APIs have the same signature:
+
+```go
+// no arg
+func(ctx context.Context, opts *github.SomeOpts) ([]*github.SomeResource, *github.Response, error)
+
+// one string arg
+func(ctx context.Context, arg1 string, opts *github.SomeOpts, *github.Response, error)
+
+// two string args
+func(ctx context.Context, arg1, arg2 string, opts *github.SomeOpts, *github.Response, error)
+```
+
+and because of this is possible to derive the option type and the returned object type.
+
+Depending of the API you need to use you can create an iterator from one of the three provided constructor:
+
+```go
+// no arg
+ghiter.NewFromFn(client.Users.ListAll)
+
+// one string arg
+ghiter.NewFromFn1(client.Repositories.ListByUser, "enrichman")
+
+// two string args
+ghiter.NewFromFn2(client.Issues.ListByRepo, "enrichman", "gh-iter")
+```
+
+### Customize options
+
+You can tweak the iteration providing your own options; they will be updated during the loop.
+
+For example if you want to request only 5 repositories per request:
+
+```go
+ghiter.NewFromFn1(client.Repositories.ListByUser, "enrichman").
+	Opts(&github.RepositoryListByUserOptions{
+		ListOptions: github.ListOptions{PerPage: 5},
+	})
+```
+
+### Context
+
+If you don't provide a context with the `Ctx()` func an empty `context.Background` will be used. You can use a custom context to have a more granular control, for example if you want to close the iteration from a timeout, or with a manual cancellation.
+
+You can check if the int
+
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+
+repos := ghiter.NewFromFn1(client.Repositories.ListByUser, "enrichman").Ctx(ctx)
+for repo := range repos.All() {
+    if *repo.Name == "myrepo" {
+        fmt.Println(*repo.Name)
+	    cancel()
+    }
+}
+```
+
+## Advanced usage
+
+Some APIs do not match the "standard" string arguments, or the returned type is not an array. In these case you can still use this package, but you will need to provide a "custom func" to the `ghiter.NewFromFn` constructor.
+
+For example the [`client.Teams.ListTeamReposByID`](https://pkg.go.dev/github.com/google/go-github/v63/github#TeamsService.ListTeamReposByID) uses the `orgID, teamID int64` arguments:
+
+```go
+repos := ghiter.NewFromFn(func(ctx context.Context, opts *github.ListOptions) ([]*github.Repository, *github.Response, error) {
+	return client.Teams.ListTeamReposByID(ctx, 123, 456, opts)
+})
+```
+
+In the case the returned object is not an array you will have to "unwrap" it. For example the [`client.Teams.ListIDPGroupsInOrganization`](https://pkg.go.dev/github.com/google/go-github/v63/github#TeamsService.ListIDPGroupsInOrganization) returns a [IDPGroupList](https://pkg.go.dev/github.com/google/go-github/v63/github#IDPGroupList), and not a slice. 
+
+```go
+idpGroups := ghiter.NewFromFn(func(ctx context.Context, opts *github.ListCursorOptions) ([]*github.IDPGroup, *github.Response, error) {
+	groups, resp, err := client.Teams.ListIDPGroupsInOrganization(ctx, "myorg", opts)
+    // remember to check for nil!
+	if groups != nil {
+		return groups.Groups, resp, err
+	}
+	return nil, resp, err
+})
+```
+
+
+# Feedback
+
+If you like the project please star it on Github 🌟, and feel free to drop me a note, or [open an issue](https://github.com/enrichman/gh-iter/issues/new)!
+
+[Twitter](https://twitter.com/enrichmann)
+
+# License
+
+[MIT](LICENSE)
