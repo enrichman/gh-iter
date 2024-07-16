@@ -2,55 +2,63 @@
 
 > **Note:** this package leverages the new [`iter`](https://pkg.go.dev/iter) package, and it needs the latest [`v1.23rc1`](https://go.dev/dl/#go1.23rc1) Go version.
 
-The `gh-iter` package provides an iterator that can be used with the [`google/go-github`](https://github.com/google/go-github) client. It supports automatic pagination with generic types.
+The `gh-iter` package provides an iterator that can be used with the [`google/go-github`](https://github.com/google/go-github) client.  
+It supports automatic pagination with generic types.
 
-Example:
+## Quickstart
 
 ```go
-// init your Github client
-client := github.NewClient(nil)
+package main
 
-// create an iterator and start looping! 🎉
-users := ghiter.NewFromFn(client.Users.ListAll)
-for u := range users.All() {
-    fmt.Println(*u.Login)
-}
+import (
+	"fmt"
 
-// and check if the loop stopped because of an error
-if users.Err() != nil {
-    // something happened :(
+	ghiter "github.com/enrichman/gh-iter"
+	"github.com/google/go-github/v63/github"
+)
+
+func main() {
+	// init your Github client
+	client := github.NewClient(nil)
+
+	// create an iterator, and start looping! 🎉
+	users := ghiter.NewFromFn(client.Users.ListAll)
+	for u := range users.All() {
+		fmt.Println(*u.Login)
+	}
+
+	// check if the loop stopped because of an error
+	if err := users.Err(); err != nil {
+		// something happened :(
+		panic(err)
+	}
 }
 ```
 
 ## Usage
 
-Most of the Github APIs have the same signature:
-
-```go
-// no arg
-func(ctx context.Context, opts *github.SomeOpts) ([]*github.SomeResource, *github.Response, error)
-
-// one string arg
-func(ctx context.Context, arg1 string, opts *github.SomeOpts, *github.Response, error)
-
-// two string args
-func(ctx context.Context, arg1, arg2 string, opts *github.SomeOpts, *github.Response, error)
-```
-
-and because of this is possible to derive the option type and the returned object type.
-
 Depending of the API you need to use you can create an iterator from one of the three provided constructor:
 
+### No args
+
 ```go
-// no arg
 ghiter.NewFromFn(client.Users.ListAll)
+```
 
-// one string arg
+### One string arg
+
+```go
 ghiter.NewFromFn1(client.Repositories.ListByUser, "enrichman")
+```
 
-// two string args
+### Two string args
+
+```go
 ghiter.NewFromFn2(client.Issues.ListByRepo, "enrichman", "gh-iter")
 ```
+
+Then you can simply loop through the objects with the `All()` method.
+
 
 ### Customize options
 
