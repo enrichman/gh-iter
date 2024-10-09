@@ -1,4 +1,4 @@
-module github.com/enrichman/gh-iter
+module github.com/enrichman/gh-iter/v63
 
 go 1.23
 
