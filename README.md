@@ -1,6 +1,6 @@
 # gh-iter
 
-> **Note:** this package leverages the new [`iter`](https://pkg.go.dev/iter) package, and it needs the latest [`v1.23rc1`](https://go.dev/dl/#go1.23rc1) Go version.
+> **Note:** this package leverages the new [`iter`](https://pkg.go.dev/iter) package, and it needs Go [`1.23`](https://go.dev/dl/#go1.23).
 
 The `gh-iter` package provides an iterator that can be used with the [`google/go-github`](https://github.com/google/go-github) client.  
 It supports automatic pagination with generic types.
