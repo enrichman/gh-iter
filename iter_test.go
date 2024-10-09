@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/google/go-github/v65/github"
+	"github.com/google/go-github/v66/github"
 )
 
 func Test_updateOptions(t *testing.T) {
