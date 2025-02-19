@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/go-github/v66/github"
 )
@@ -123,7 +124,10 @@ func (it *Iterator[T, O]) All() iter.Seq[T] {
 					vals[k] = v[0]
 				}
 
-				updateOptions(it.opt, vals)
+				if err := updateOptions(it.opt, vals); err != nil {
+					it.err = err
+					return
+				}
 			}
 		}
 	}
@@ -200,10 +204,17 @@ func (it *Iterator[T, O]) do() ([]T, *github.Response, error) {
 	return nil, nil, errors.New("no func provided")
 }
 
+var (
+	stringTypePtr *string
+	intTypePtr    *int
+	int64TypePtr  *int64
+	boolTypePtr   *bool
+)
+
 // updateOptions will update the github options based on the provided map and the `url` tag.
 // If the field in the struct has a `url` tag it tries to set the value of the field from the one
 // found in the map, if any.
-func updateOptions(v any, m map[string]string) {
+func updateOptions(v any, m map[string]string) error {
 	valueOf := reflect.ValueOf(v)
 	typeOf := reflect.TypeOf(v)
 
@@ -219,29 +230,120 @@ func updateOptions(v any, m map[string]string) {
 		// if field is of type struct then iterate over the pointer
 		if structField.Type.Kind() == reflect.Struct {
 			if fieldValue.CanAddr() {
-				updateOptions(fieldValue.Addr().Interface(), m)
+				if err := updateOptions(fieldValue.Addr().Interface(), m); err != nil {
+					return err
+				}
 			}
 		}
 
 		// otherwise check if it has a 'url' tag
 		urlTag := structField.Tag.Get("url")
-		if urlTag != "" {
-			urlParam := strings.Split(urlTag, ",")[0]
+		if urlTag == "" {
+			continue
+		}
 
-			if fieldValue.IsValid() && fieldValue.CanSet() {
-				if v, found := m[urlParam]; found {
-					switch fieldValue.Kind() {
-					case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-						if i, err := strconv.Atoi(v); err == nil {
-							fieldValue.SetInt(int64(i))
-						}
-					case reflect.Ptr:
-						fieldValue.Set(reflect.ValueOf(&v))
-					default:
-						fieldValue.Set(reflect.ValueOf(v))
-					}
-				}
+		if !fieldValue.IsValid() || !fieldValue.CanSet() {
+			continue
+		}
+
+		urlParam := strings.Split(urlTag, ",")[0]
+		v, found := m[urlParam]
+		if !found {
+			continue
+		}
+
+		switch fieldValue.Kind() {
+
+		// handle string
+		case reflect.String:
+			fieldValue.Set(reflect.ValueOf(v))
+
+		// handle numeric types (int, int8, int16, int32, int64)
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			if i, err := strconv.Atoi(v); err == nil {
+				fieldValue.SetInt(int64(i))
 			}
+
+		// handle bool
+		case reflect.Bool:
+			parsedBool, err := strconv.ParseBool(v)
+			if err != nil {
+				return fmt.Errorf("error while parsing string '%s' as bool: %s", v, err)
+			}
+			fieldValue.Set(reflect.ValueOf(parsedBool))
+
+		// handle pointers (*string, *int, *int64, *bool, *time.Time)
+		case reflect.Pointer:
+			switch fieldValue.Type() {
+
+			// handle *string
+			case reflect.TypeOf(stringTypePtr):
+				fieldValue.Set(reflect.ValueOf(&v))
+
+			// handle *int
+			case reflect.TypeOf(intTypePtr):
+				parsedInt, err := strconv.Atoi(v)
+				if err != nil {
+					return fmt.Errorf("error while parsing string '%s' as int: %s", v, err)
+				}
+				fieldValue.Set(reflect.ValueOf(&parsedInt))
+
+			// handle *int64
+			case reflect.TypeOf(int64TypePtr):
+				parsedInt64, err := strconv.ParseInt(v, 10, 64)
+				if err != nil {
+					return fmt.Errorf("error while parsing string '%s' as int64: %s", v, err)
+				}
+				fieldValue.Set(reflect.ValueOf(&parsedInt64))
+
+			// handle *bool
+			case reflect.TypeOf(boolTypePtr):
+				parsedBool, err := strconv.ParseBool(v)
+				if err != nil {
+					return fmt.Errorf("error while parsing string '%s' as bool: %s", v, err)
+				}
+				fieldValue.Set(reflect.ValueOf(&parsedBool))
+
+			// handle *time.Time
+			case reflect.TypeOf(&time.Time{}):
+				layout := time.RFC3339
+				if len(v) == len(time.DateOnly) {
+					layout = time.DateOnly
+				}
+
+				result, err := time.Parse(layout, v)
+				if err != nil {
+					return fmt.Errorf("error while parsing string '%s' as time.Time: %s", v, err)
+				}
+
+				fieldValue.Set(reflect.ValueOf(&result))
+
+			default:
+				return fmt.Errorf("cannot set '%s' value to unknown pointer of '%s'", v, fieldValue.Type())
+			}
+
+		case reflect.Struct:
+			// handle time.Time
+			if fieldValue.Type() == reflect.TypeOf(time.Time{}) {
+				layout := time.RFC3339
+				if len(v) == len(time.DateOnly) {
+					layout = time.DateOnly
+				}
+
+				result, err := time.Parse(layout, v)
+				if err != nil {
+					return fmt.Errorf("error while parsing string '%s' as time.Time: %s", v, err)
+				}
+
+				fieldValue.Set(reflect.ValueOf(result))
+			} else {
+				return fmt.Errorf("cannot set '%s' value to unknown struct '%s'", v, fieldValue.Type())
+			}
+
+		default:
+			return fmt.Errorf("cannot set '%s' value to unknown type '%s'", v, fieldValue.Type())
 		}
 	}
+
+	return nil
 }
